@@ -55,7 +55,7 @@ def kernelwidthPair(x1, x2):
 
     return mdist
 
-def sample_generate(N, d, std=0.4):
+def sample_generate(N, d, std=0.8):
     # Generate N samples from mu and nu, respectively
     # mu: Gaussian distribution in R^d
     # nu: First entry is Laplace distribution with zero mean and standard deviation 0.8. Remaining is Gaussian
