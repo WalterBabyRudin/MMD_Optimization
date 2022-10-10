@@ -73,6 +73,25 @@ def sample_generate(N, d, std=0.8):
 
     return x, y
 
+def sample_generate_Gaussian(N, d, std=0.4):
+    # Generate N samples from mu and nu, respectively
+    # mu: Gaussian distribution in R^d
+    # nu: First entry is Laplace distribution with zero mean and standard deviation 0.8. Remaining is Gaussian
+    # Input:
+    #     N: sample size
+    #     d: data dimension
+
+    x = np.random.randn(N,d)
+    
+    y = np.random.randn(N,d)
+    
+    #scale = std
+    y1 = np.random.randn(N,1) * std
+    y[:,0] = y1.reshape([-1,])
+
+    return x, y
+
+
 def MMD_grad_compute(x, y, z, sigma):
     # Computer objective function, gradient, Hessian based on iteration point z
     # Input:

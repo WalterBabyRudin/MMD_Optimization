@@ -6,8 +6,6 @@ import torch
 import scipy.spatial
 import utils
 import time
-import gurobipy as gp
-from gurobipy import GRB
 
 def inner_product_compute(X, Y):
     """
@@ -81,7 +79,7 @@ def quad_product_compute(X, Y):
             a = a + a_xy
     return A, a.reshape([-1,])
 
-def quad_kernel_selector(X, Y, sigma, z0, K=5):
+def quad_kernel_selector(X, Y, sigma, K=5):
     """
     Return optimal selector from quadratic kernel based on optimization
     Maximize zTAz + zTq
@@ -113,25 +111,16 @@ def quad_kernel_selector(X, Y, sigma, z0, K=5):
     q = q * 2 * sigma
 
     A = 1/(n * (n-1)) * A_xx + 1/(m * (m-1)) * A_yy - 2/(n * m) * A_xy
-    A = -A
-    model = gp.Model('qp')
-    z = model.addVars(D, vtype=GRB.BINARY, name="z")
-    z.start = z0
-    #z = cp.Variable(D, boolean=True)
+
+    
+    z = cp.Variable(D, boolean=True)
     #z = cp.Variable(D)
-    model.setObjective(gp.quicksum(gp.quicksum(z[i] * z[j] * A[i,j] for i in range(D)) for j in range(D)) + gp.quicksum(q[i] * z[i] for i in range(D)))
-    #objective = cp.Minimize(cp.quad_form(z, -A) + cp.sum(cp.multiply(q, z)))
-    model.addConstr(z.sum() <= K)
-    model.params.NonConvex = 2
-    model.Params.LogToConsole = 0
+    objective = cp.Minimize(cp.quad_form(z, -A) + cp.sum(cp.multiply(q, z)))
+    constr = [cp.sum(z) <= K]
+    prob = cp.Problem(objective, constr)
+    prob.solve(solver = cp.GUROBI)
 
-
-    #constr = [cp.sum(z) <= K]
-    model.optimize()
-
-    list_sol = [v.X for v in z.values()]
-    return np.array(list_sol)
-    #return z.value
+    return z.value
 
 
 
@@ -139,71 +128,18 @@ def quad_kernel_selector(X, Y, sigma, z0, K=5):
 np.random.seed(1)
 
 # Parameter Setting
-d_hist = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
-L_d_hist = len(d_hist)
-max_trial = 200
-counter_linear = np.zeros(L_d_hist)
-counter_quadratic = np.zeros(L_d_hist)
+d_hist = [10]
 
-
-for i in range(L_d_hist):
+for i in range(len(d_hist)):
     d = d_hist[i]
-    N = 100
+    N = 10*d
 
-    for trial in range(max_trial):
+    x, y = utils.sample_generate(N,d)
 
-        x, y = utils.sample_generate_Gaussian(N,d)
+    # z = linear_kernel_selector(x, y, K=1)
+    # print(z)
 
-        z0 = linear_kernel_selector(x, y, K=5)
-        # print("----------------------------------------")
-        # print("Dimension: ", d, "Sample Size: ",N)
-        # print("Solution for Linear Kernel: ")
-        # print(z0)
-
-        c = utils.kernelwidthPair(x,y)
-        z = quad_kernel_selector(x,y, np.sqrt(c)/100, z0, K = 5)
-        # print("----------------------------------------")
-        # print("Solution for Quadratic Kernel: ")
-        # print(z)
-
-        if z0[0] == 1:
-            counter_linear[i] = counter_linear[i] + 1
-        if z[0] == 1:
-            counter_quadratic[i] = counter_quadratic[i] + 1
-            print(z)
-    print("----------------------------------------")
-    print("Dimension: ", d, "Sample Size: ",N)
-    print(counter_linear[i])
-    print(counter_quadratic[i])
-
-np.save("counter_linear.npy", counter_linear)
-np.save("counter_quadratic.npy", counter_quadratic)
-
-
-# examine running time
-
-cpu_linear_hist = np.zeros(L_d_hist)
-cpu_quadratic_hist = np.zeros(L_d_hist)
-for i in range(L_d_hist):
-    d = d_hist[i]
-    N = d
-    x, y = utils.sample_generate_Gaussian(N,d)
-
-    start_time = time.time()
-    z0 = linear_kernel_selector(x, y, K=5)
-    cpu_linear = time.time() - start_time
-
-    start_time = time.time()
     c = utils.kernelwidthPair(x,y)
-    z = quad_kernel_selector(x,y, np.sqrt(c)/100, z0, K = 5)
-    cpu_quadratic = time.time() - start_time
-
-    cpu_linear_hist[i] = cpu_linear
-    cpu_quadratic_hist[i] = cpu_quadratic
-
-np.save("cpu_linear_hist.npy", cpu_linear_hist)
-np.save("cpu_quadratic_hist.npy", cpu_quadratic_hist)
-
-
-
-
+    print(c)
+    z = quad_kernel_selector(x,y, c, K = 1)
+    print(z)
