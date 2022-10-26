@@ -91,7 +91,6 @@ def sample_generate_Gaussian(N, d, std=0.4):
 
     return x, y
 
-
 def MMD_grad_compute(x, y, z, sigma):
     # Computer objective function, gradient, Hessian based on iteration point z
     # Input:
@@ -168,7 +167,6 @@ def MMD_stat_compute(x, y, z, sigma):
 
     return f_0
 
-
 def z_update(z0,g,H,rho,k=3):
 #def z_update(z0,g,H,k=3):
     # update variable selector by mixed integer QP
@@ -183,7 +181,6 @@ def z_update(z0,g,H,rho,k=3):
     prob.solve(solver=cp.MOSEK)
 
     return z.value
-
 
 def MMD_grid_search(x, y, z, sigma, k):
     N,d = np.shape(x)
@@ -208,3 +205,26 @@ def MMD_grid_search(x, y, z, sigma, k):
 
     return z_optimal
 
+def MMD_exp_coeff_prepare(x, y, sigma):
+    # Computer input data for exponential kernel 
+    # Input:
+    #     x: N*d matrix
+    #     y: N*d matrix
+    # sigma: kernel bandwidth
+    N, D = np.shape(x)
+    a_xx = np.zeros([N, N, D])
+    a_yy = np.zeros([N, N, D])
+    a_xy = np.zeros([N, N, D])
+
+    for i in range(N):
+        for j in range(N):
+            if j == i:
+                a_xx[i,j,:] = 1
+                a_yy[i,j,:] = 1
+                a_xy[i,j,:] = 1
+            else:
+                a_xx[i,j,:] = np.exp(-(x[i,:] - x[j,:])**2/(2*sigma))
+                a_yy[i,j,:] = np.exp(-(y[i,:] - y[j,:])**2/(2*sigma))
+                a_xy[i,j,:] = np.exp(-(x[i,:] - y[j,:])**2/(2*sigma))
+    
+    return a_xx.reshape([-1,D]), a_yy.reshape([-1,D]), a_xy.reshape([-1,D])
