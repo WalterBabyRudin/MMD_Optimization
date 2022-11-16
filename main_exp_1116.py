@@ -11,6 +11,14 @@ import time
 from gurobipy import GRB
 
 import gurobipy as gp
+# from itertools import compress, count, imap, islice
+# from functools import partial
+# from operator import eq
+
+def nth_item(n, item, x):
+    #indicies = compress(count(), imap(partial(eq, item), iterable))
+    return [y for y in enumerate(x) if y[1]==item][n][0]
+
 def exp_kernel_selector(a_xx, a_yy, a_xy, K=2):
     """
     Return optimal selector from Gaussian kernel based on optimization
@@ -117,48 +125,100 @@ def GRB_exp_kernel_selector_efficient(a_xx, a_yy, a_xy, z0, K=5):
 
     N2, D = np.shape(a_xx)
 
+    # ind_a_xx = a_xx <= 0.99
+    # ind_a_yy = a_yy <= 0.99
+    # ind_a_xy = a_xy <= 0.99
+    # a_xx = a_xx[ind_a_xx]
+    # a_yy = a_yy[ind_a_yy]
+    # a_xy = a_xy[ind_a_xy]
+
+    L_a_xx = [int(np.sum(a_xx[i, :] <= 0.99)) for i in range(N2)]
+    L_a_yy = [int(np.sum(a_yy[i, :] <= 0.99)) for i in range(N2)]
+    L_a_xy = [int(np.sum(a_xy[i, :] <= 0.99)) for i in range(N2)]
+
+
+
 
     # create gurobi model 
     model = gp.Model("Exponential Kernel Selection")
 
     z = model.addVars(D, vtype=GRB.BINARY)
-    e_xx = model.addVars(N2, D+1)
-    e_yy = model.addVars(N2, D+1)
-    e_xy = model.addVars(N2, D+1)
 
-    MMD_obj = -e_xx.sum() - e_yy.sum() + 2*e_xy.sum()
+    e_xx_list = []
+    e_yy_list = []
+    e_xy_list = []
+    for i in range(N2):
+        e_xx_i = model.addVars(L_a_xx[i] + 1)
+        e_xx_list.append(e_xx_i)
+
+        e_yy_i = model.addVars(L_a_yy[i] + 1)
+        e_yy_list.append(e_yy_i)
+
+        e_xy_i = model.addVars(L_a_xy[i] + 1)
+        e_xy_list.append(e_xy_i)
+
+
+    MMD_obj = gp.quicksum(-e_xx_list[i][L_a_xx[i]] - e_yy_list[i][L_a_yy[i]] + 2 * e_xy_list[i][L_a_xy[i]] for i in range(N2))
+
 
     model.addConstr(z.sum() <= K)
-    #print(e_xx)
+    # #print(e_xx)
     for i in range(N2):
-        model.addConstr(e_xx[i,0] == 1)
-        model.addConstr(e_yy[i,0] == 1)
-        model.addConstr(e_xy[i,0] == 1)
+        model.addConstr(e_xx_list[i][0] == 1)
+        model.addConstr(e_yy_list[i][0] == 1)
+        model.addConstr(e_xy_list[i][0] == 1)
 
-        for d in range(D):
+        index_a_xx_reduced_i = a_xx[i, :] <= 0.99
+        a_xx_reduced_i = a_xx[i, index_a_xx_reduced_i]
 
-            if np.abs(a_xx[i,d] - 1) <= 0.1:
-                model.addConstr(e_xx[i,d+1] == e_xx[i,d])
-            else:
-                model.addConstr((z[d] == 0) >> (e_xx[i,d+1] == e_xx[i,d]))
-                model.addConstr((z[d] == 1) >> (e_xx[i,d+1] == a_xx[i,d] * e_xx[i,d]))
+        index_a_yy_reduced_i = a_yy[i, :] <= 0.99
+        a_yy_reduced_i = a_yy[i, index_a_yy_reduced_i]
+
+        index_a_xy_reduced_i = a_xy[i, :] <= 0.99
+        a_xy_reduced_i = a_xy[i, index_a_xy_reduced_i]
+
+        for d_i_xx in range(L_a_xx[i]):
+            d = nth_item(d_i_xx, True, index_a_xx_reduced_i)
+            model.addConstr((z[d] == 0) >> (e_xx_list[i][d_i_xx+1] == e_xx_list[i][d_i_xx]))
+            model.addConstr((z[d] == 1) >> (e_xx_list[i][d_i_xx+1] == a_xx_reduced_i[d_i_xx] * e_xx_list[i][d_i_xx]))
+
+        for d_i_yy in range(L_a_yy[i]):
+            d = nth_item(d_i_yy, True, index_a_yy_reduced_i)
+            model.addConstr((z[d] == 0) >> (e_yy_list[i][d_i_yy+1] == e_yy_list[i][d_i_yy]))
+            model.addConstr((z[d] == 1) >> (e_yy_list[i][d_i_yy+1] == a_yy_reduced_i[d_i_yy] * e_yy_list[i][d_i_yy]))
+
+        for d_i_xy in range(L_a_xy[i]):
+            d = nth_item(d_i_xy, True, index_a_xy_reduced_i)
+            model.addConstr((z[d] == 0) >> (e_xy_list[i][d_i_xy+1] == e_xy_list[i][d_i_xy]))
+            model.addConstr((z[d] == 1) >> (e_xy_list[i][d_i_xy+1] == a_xy_reduced_i[d_i_xy] * e_xy_list[i][d_i_xy]))
+        
+
+    #     for d in range(D):
+
+    #         if np.abs(a_xx[i,d] - 1) <= 0.1:
+    #             model.addConstr(e_xx[i,d+1] == e_xx[i,d])
+    #         else:
+    #             model.addConstr((z[d] == 0) >> (e_xx[i,d+1] == e_xx[i,d]))
+    #             model.addConstr((z[d] == 1) >> (e_xx[i,d+1] == a_xx[i,d] * e_xx[i,d]))
             
-            if np.abs(a_yy[i,d] - 1) <= 0.1:
-                model.addConstr(e_yy[i,d+1] == e_yy[i,d])
-            else:
-                model.addConstr((z[d] == 0) >> (e_yy[i,d+1] == e_yy[i,d]))
-                model.addConstr((z[d] == 1) >> (e_yy[i,d+1] == a_yy[i,d] * e_yy[i,d]))
+    #         if np.abs(a_yy[i,d] - 1) <= 0.1:
+    #             model.addConstr(e_yy[i,d+1] == e_yy[i,d])
+    #         else:
+    #             model.addConstr((z[d] == 0) >> (e_yy[i,d+1] == e_yy[i,d]))
+    #             model.addConstr((z[d] == 1) >> (e_yy[i,d+1] == a_yy[i,d] * e_yy[i,d]))
             
-            if np.abs(a_xy[i,d] - 1) <= 0.1:
-                model.addConstr(e_xy[i,d+1] == e_xy[i,d])
-            else:
-                model.addConstr((z[d] == 0) >> (e_xy[i,d+1] == e_xy[i,d]))
-                model.addConstr((z[d] == 1) >> (e_xy[i,d+1] == a_xy[i,d] * e_xy[i,d]))
+    #         if np.abs(a_xy[i,d] - 1) <= 0.1:
+    #             model.addConstr(e_xy[i,d+1] == e_xy[i,d])
+    #         else:
+    #             model.addConstr((z[d] == 0) >> (e_xy[i,d+1] == e_xy[i,d]))
+    #             model.addConstr((z[d] == 1) >> (e_xy[i,d+1] == a_xy[i,d] * e_xy[i,d]))
         
     z.start = z0
     model.setObjective(MMD_obj, GRB.MINIMIZE)
     model.optimize()
 
+    list_sol = [v.X for v in z.values()]
+    return np.array(list_sol)
 
 
 
@@ -293,12 +353,12 @@ def quad_kernel_selector(X, Y, sigma, z0, K=5):
 
 
 # Parameter Setting
-d_hist = [100]#[10, 20, 50, 100, 200]
-
+d_hist = [10]#[10, 20, 50, 100, 200]
+ 
 
 for i in range(len(d_hist)):
     d = d_hist[i]
-    N = 100
+    N = 30
 
     x, y = utils.sample_generate(N,d)
     sigma = utils.kernelwidthPair(x,y)
@@ -308,15 +368,36 @@ for i in range(len(d_hist)):
 
     c = utils.kernelwidthPair(x,y)
     z0 = linear_kernel_selector(x, y, K=5)
-    z_quad = quad_kernel_selector(x,y, np.sqrt(c)/100, z0, K = 5)
+    z_quad = quad_kernel_selector(x,y, np.sqrt(c), z0, K = 5)
 
     #exp_kernel_selector(a_xx, a_yy, a_xy)
     #GRB_exp_kernel_selector_efficient(a_xx, a_yy, a_xy, z_quad)
 
-    print(np.quantile(a_xx, 0.9))
-    print(np.quantile(a_yy, 0.9))
-    print(np.quantile(a_xy, 0.9))
+    # Pre-process coefficients
+    Threshold_a_xx, Threshold_a_yy, Threshold_a_xy = np.quantile(a_xx, 0.9), np.quantile(a_yy, 0.9), np.quantile(a_xy, 0.9)
+    for i in range(N*N):
+        for j in range(d):
+            if a_xx[i,j] >= Threshold_a_xx:
+                a_xx[i,j] = 1
+            if a_yy[i,j] >= Threshold_a_yy:
+                a_yy[i,j] = 1
+            if a_xy[i,j] >= Threshold_a_xy:
+                a_xy[i,j] = 1
 
+    #print(np.quantile(a_xy,0.09))
+
+    # ind_a_xx = a_xx <= 0.99
+    # ind_a_yy = a_yy <= 0.99
+    # ind_a_xy = a_xy <= 0.99
+    # a_xx = a_xx[ind_a_xx]
+    # a_yy = a_yy[ind_a_yy]
+    # a_xy = a_xy[ind_a_xy]
+
+
+    # print(a_xx)
+    z_exp = GRB_exp_kernel_selector_efficient(a_xx, a_yy, a_xy, z_quad)
+    print(z_exp)
+    
 
 
     
